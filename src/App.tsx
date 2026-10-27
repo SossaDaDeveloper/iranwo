@@ -1,119 +1,148 @@
-import { useState } from 'react'
-import './App.css'
+import { useEffect, useState } from "react";
 
-function App() {
-  const [count, setCount] = useState(0)
+import WelcomeStep from "./components/onboarding/WelcomeStep";
+import LanguageStep from "./components/onboarding/LanguageStep";
+import PersonalInfoStep from "./components/onboarding/PersonalInfoStep";
+import HealthHistoryStep from "./components/onboarding/HealthHistoryStep";
+import SymptomsStep from "./components/onboarding/SymptomsStep";
+import TrustedContactStep from "./components/onboarding/TrustedContactStep";
+import ReviewStep from "./components/onboarding/ReviewStep";
+import CompleteStep from "./components/onboarding/CompleteStep";
+import HomeStep from "./components/onboarding/HomeStep";
+import type { UserProfile } from "./features/profile/profile.types";
+import "./App.css";
 
-  return (
-    <>
-      <section id="center">
-        <div className="hero">
-          <img src={heroImg} className="base" width="170" height="179" alt="" />
-          <img src={reactLogo} className="framework" alt="React logo" />
-          <img src={viteLogo} className="vite" alt="Vite logo" />
-        </div>
-        <div>
-          <h1>Get started</h1>
-          <p>
-            Edit <code>src/App.tsx</code> and save to test <code>HMR</code>
-          </p>
-        </div>
-        <button
-          type="button"
-          className="counter"
-          onClick={() => setCount((count) => count + 1)}
-        >
-          Count is {count}
-        </button>
-      </section>
+const PROFILE_STORAGE_KEY = "iranwo-profile-v1";
+const LEGACY_COMPLETE_KEY = "iranwo-onboarding-complete";
+const HOME_STEP = 8;
 
-      <div className="ticks"></div>
+const DEFAULT_PROFILE: UserProfile = {
+  onboardingComplete: false,
+  firstName: "",
+  age: undefined,
+  sex: "",
+  language: "en",
+  conditions: [],
+  conditionOther: "",
+  allergy: "",
+  allergyText: "",
+  medication: "",
+  medicationText: "",
+  symptomsNow: "",
+  symptomsText: "",
+  recurring: "",
+  recurringText: "",
+  notes: "",
+  trustedContact: undefined,
+};
 
-      <section id="next-steps">
-        <div id="docs">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#documentation-icon"></use>
-          </svg>
-          <h2>Documentation</h2>
-          <p>Your questions, answered</p>
-          <ul>
-            <li>
-              <a href="https://vite.dev/" target="_blank">
-                <img className="logo" src={viteLogo} alt="" />
-                Explore Vite
-              </a>
-            </li>
-            <li>
-              <a href="https://react.dev/" target="_blank">
-                <img className="button-icon" src={reactLogo} alt="" />
-                Learn more
-              </a>
-            </li>
-          </ul>
-        </div>
-        <div id="social">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#social-icon"></use>
-          </svg>
-          <h2>Connect with us</h2>
-          <p>Join the Vite community</p>
-          <ul>
-            <li>
-              <a href="https://github.com/vitejs/vite" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#github-icon"></use>
-                </svg>
-                GitHub
-              </a>
-            </li>
-            <li>
-              <a href="https://chat.vite.dev/" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#discord-icon"></use>
-                </svg>
-                Discord
-              </a>
-            </li>
-            <li>
-              <a href="https://x.com/vite_js" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#x-icon"></use>
-                </svg>
-                X.com
-              </a>
-            </li>
-            <li>
-              <a href="https://bsky.app/profile/vite.dev" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#bluesky-icon"></use>
-                </svg>
-                Bluesky
-              </a>
-            </li>
-          </ul>
-        </div>
-      </section>
+function readInitialState(): { profile: UserProfile; step: number } {
+  if (typeof window === "undefined") {
+    return { profile: DEFAULT_PROFILE, step: 0 };
+  }
 
-      <div className="ticks"></div>
-      <section id="spacer"></section>
-    </>
-  )
+  try {
+    const stored = window.localStorage.getItem(PROFILE_STORAGE_KEY);
+    const savedProfile = stored ? (JSON.parse(stored) as Partial<UserProfile>) : {};
+    const legacyComplete = window.localStorage.getItem(LEGACY_COMPLETE_KEY) === "true";
+    const profile: UserProfile = {
+      ...DEFAULT_PROFILE,
+      ...savedProfile,
+      onboardingComplete: savedProfile.onboardingComplete ?? legacyComplete,
+    };
+
+    return { profile, step: profile.onboardingComplete ? HOME_STEP : 0 };
+  } catch {
+    return { profile: DEFAULT_PROFILE, step: 0 };
+  }
 }
 
-export default App
+function App() {
+  const [initialState] = useState(readInitialState);
+  const [profile, setProfile] = useState<UserProfile>(initialState.profile);
+  const [currentStep, setCurrentStep] = useState(initialState.step);
+  const [editing, setEditing] = useState(false);
+
+  // Save profile updates locally so progress survives refreshes and reopening the app.
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(PROFILE_STORAGE_KEY, JSON.stringify(profile));
+      if (profile.onboardingComplete) {
+        window.localStorage.setItem(LEGACY_COMPLETE_KEY, "true");
+      } else {
+        window.localStorage.removeItem(LEGACY_COMPLETE_KEY);
+      }
+    } catch {
+      // The app can still run if storage is unavailable, though data may not persist.
+    }
+  }, [profile]);
+
+  const update = (changes: Partial<UserProfile>) => {
+    setProfile((current) => ({ ...current, ...changes }));
+  };
+
+  const next = () => {
+    if (editing) {
+      // When editing from Review, return to Review instead of advancing the whole flow.
+      setEditing(false);
+      setCurrentStep(6);
+      return;
+    }
+
+    setCurrentStep((step) => Math.min(step + 1, HOME_STEP));
+  };
+
+  const back = () => {
+    if (editing) {
+      setEditing(false);
+      setCurrentStep(6);
+      return;
+    }
+
+    setCurrentStep((step) => Math.max(step - 1, 0));
+  };
+
+  const goTo = (step: number) => {
+    // Review's Edit buttons target steps 1 through 5.
+    if (step < 1 || step > 5) return;
+    setEditing(true);
+    setCurrentStep(step);
+  };
+
+  const reset = () => {
+    try {
+      window.localStorage.removeItem(PROFILE_STORAGE_KEY);
+      window.localStorage.removeItem(LEGACY_COMPLETE_KEY);
+    } catch {
+      // Reset the in-memory state even if local storage is unavailable.
+    }
+    setProfile({ ...DEFAULT_PROFILE });
+    setEditing(false);
+    setCurrentStep(0);
+  };
+
+  const stepProps = { profile, update, next, back, goTo, editing, reset };
+
+  switch (currentStep) {
+    case 0:
+      return <WelcomeStep {...stepProps} />;
+    case 1:
+      return <LanguageStep {...stepProps} />;
+    case 2:
+      return <PersonalInfoStep {...stepProps} />;
+    case 3:
+      return <HealthHistoryStep {...stepProps} />;
+    case 4:
+      return <SymptomsStep {...stepProps} />;
+    case 5:
+      return <TrustedContactStep {...stepProps} />;
+    case 6:
+      return <ReviewStep {...stepProps} />;
+    case 7:
+      return <CompleteStep {...stepProps} />;
+    default:
+      return <HomeStep {...stepProps} />;
+  }
+}
+
+export default App;
