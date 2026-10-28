@@ -1,148 +1,227 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState } from 'react'
+import WelcomeStep from './components/onboarding/WelcomeStep'
+import LanguageStep from './components/onboarding/LanguageStep'
+import PersonalInfoStep from './components/onboarding/PersonalInfoStep'
+import HealthHistoryStep from './components/onboarding/HealthHistoryStep'
+import SymptomsStep from './components/onboarding/SymptomsStep'
+import TrustedContactStep from './components/onboarding/TrustedContactStep'
+import ReviewStep from './components/onboarding/ReviewStep'
+import CompleteStep from './components/onboarding/CompleteStep'
+import type { AppPreferences, UserProfile } from './features/profile/profile.types'
+import { DEFAULT_PROFILE, loadMessages, loadPreferences, loadProfile, saveMessages, savePreferences, saveProfile, STORAGE_KEYS, type StoredChatMessage } from './features/profile/storage'
+import { loadLocalGemma, type ModelProgress } from './features/ai/localModel'
+import { requestPractitionerHelp, type EmergencyDispatchResult } from './features/emergency/emergencyService'
+import { DashboardScreen, ChatScreen, SymptomScreen, UrgentHelpScreen, ClinicsScreen, ClinicDetailsScreen, ContactsScreen, ProfileScreen, SettingsScreen, ModelSetupScreen, EmergencyGuideScreen, LocationScreen, type ScreenName } from './features/app/Screens'
+import type { Clinic } from './data/clinics'
+import { getContacts } from './features/profile/storage';
+import './App.css';
 
-import WelcomeStep from "./components/onboarding/WelcomeStep";
-import LanguageStep from "./components/onboarding/LanguageStep";
-import PersonalInfoStep from "./components/onboarding/PersonalInfoStep";
-import HealthHistoryStep from "./components/onboarding/HealthHistoryStep";
-import SymptomsStep from "./components/onboarding/SymptomsStep";
-import TrustedContactStep from "./components/onboarding/TrustedContactStep";
-import ReviewStep from "./components/onboarding/ReviewStep";
-import CompleteStep from "./components/onboarding/CompleteStep";
-import HomeStep from "./components/onboarding/HomeStep";
-import type { UserProfile } from "./features/profile/profile.types";
-import "./App.css";
+export default function App() {
+  const [profile, setProfile] = useState<UserProfile>(() => loadProfile())
+  const [step, setStep] = useState(profile.onboardingComplete ? 8 : 0)
+  const [screen, setScreen] = useState<ScreenName>('home')
+  const [editing, setEditing] = useState(false)
+  const [editMode, setEditMode] = useState(false)
+  const [returnScreen, setReturnScreen] = useState<ScreenName>('profile')
+  const [emergencyBypass, setEmergencyBypass] = useState(false)
+  const [messages, setMessages] = useState<StoredChatMessage[]>(() => loadMessages())
+  const [draftPrompt, setDraftPrompt] = useState('')
+  const [preferences, setPreferences] = useState<AppPreferences>(() => loadPreferences())
+  const [selectedClinic, setSelectedClinic] = useState<Clinic | null>(null)
+  const [emergencyReason, setEmergencyReason] = useState('')
+  const [emergencyStartedAt, setEmergencyStartedAt] = useState<number | null>(() => {
+    try { const raw = localStorage.getItem(STORAGE_KEYS.lastEmergency); return raw ? Number(raw) : null } catch { return null }
+  })
+  const [modelReady, setModelReady] = useState(false)
+  const [modelLoading, setModelLoading] = useState(false)
+  const [modelProgress, setModelProgress] = useState(0)
+  const [modelStatus, setModelStatus] = useState('Model not loaded in this session')
+  const [modelError, setModelError] = useState('')
+  const [dispatchState, setDispatchState] = useState<'idle' | 'sending' | 'accepted' | 'not-configured' | 'failed'>('idle')
+  const [dispatchMessage, setDispatchMessage] = useState('')
 
-const PROFILE_STORAGE_KEY = "iranwo-profile-v1";
-const LEGACY_COMPLETE_KEY = "iranwo-onboarding-complete";
-const HOME_STEP = 8;
+  useEffect(() => { saveProfile(profile) }, [profile])
+  useEffect(() => { saveMessages(messages) }, [messages])
+  useEffect(() => { savePreferences(preferences) }, [preferences])
 
-const DEFAULT_PROFILE: UserProfile = {
-  onboardingComplete: false,
-  firstName: "",
-  age: undefined,
-  sex: "",
-  language: "en",
-  conditions: [],
-  conditionOther: "",
-  allergy: "",
-  allergyText: "",
-  medication: "",
-  medicationText: "",
-  symptomsNow: "",
-  symptomsText: "",
-  recurring: "",
-  recurringText: "",
-  notes: "",
-  trustedContact: undefined,
-};
-
-function readInitialState(): { profile: UserProfile; step: number } {
-  if (typeof window === "undefined") {
-    return { profile: DEFAULT_PROFILE, step: 0 };
-  }
-
-  try {
-    const stored = window.localStorage.getItem(PROFILE_STORAGE_KEY);
-    const savedProfile = stored ? (JSON.parse(stored) as Partial<UserProfile>) : {};
-    const legacyComplete = window.localStorage.getItem(LEGACY_COMPLETE_KEY) === "true";
-    const profile: UserProfile = {
-      ...DEFAULT_PROFILE,
-      ...savedProfile,
-      onboardingComplete: savedProfile.onboardingComplete ?? legacyComplete,
-    };
-
-    return { profile, step: profile.onboardingComplete ? HOME_STEP : 0 };
-  } catch {
-    return { profile: DEFAULT_PROFILE, step: 0 };
-  }
-}
-
-function App() {
-  const [initialState] = useState(readInitialState);
-  const [profile, setProfile] = useState<UserProfile>(initialState.profile);
-  const [currentStep, setCurrentStep] = useState(initialState.step);
-  const [editing, setEditing] = useState(false);
-
-  // Save profile updates locally so progress survives refreshes and reopening the app.
-  useEffect(() => {
-    try {
-      window.localStorage.setItem(PROFILE_STORAGE_KEY, JSON.stringify(profile));
-      if (profile.onboardingComplete) {
-        window.localStorage.setItem(LEGACY_COMPLETE_KEY, "true");
-      } else {
-        window.localStorage.removeItem(LEGACY_COMPLETE_KEY);
-      }
-    } catch {
-      // The app can still run if storage is unavailable, though data may not persist.
-    }
-  }, [profile]);
-
-  const update = (changes: Partial<UserProfile>) => {
-    setProfile((current) => ({ ...current, ...changes }));
-  };
+  const updateProfile = (changes: Partial<UserProfile>) => setProfile((current) => {
+    const updated = { ...current, ...changes }
+    if (changes.trustedContacts) updated.trustedContact = changes.trustedContacts[0]
+    return updated
+  })
 
   const next = () => {
-    if (editing) {
-      // When editing from Review, return to Review instead of advancing the whole flow.
-      setEditing(false);
-      setCurrentStep(6);
-      return;
+    if (editMode) {
+      if (step === 6) {
+        setEditMode(false)
+        setEditing(false)
+        setStep(8)
+        setScreen(returnScreen)
+      } else {
+        setEditing(false)
+        setStep(6)
+      }
+      return
     }
-
-    setCurrentStep((step) => Math.min(step + 1, HOME_STEP));
-  };
+    setStep((current) => Math.min(current + 1, 8))
+  }
 
   const back = () => {
-    if (editing) {
-      setEditing(false);
-      setCurrentStep(6);
-      return;
+    if (editMode) {
+      if (step === 6) {
+        setEditMode(false)
+        setEditing(false)
+        setStep(8)
+        setScreen(returnScreen)
+      } else {
+        setEditing(false)
+        setStep(6)
+      }
+      return
     }
+    setStep((current) => Math.max(current - 1, 0))
+  }
 
-    setCurrentStep((step) => Math.max(step - 1, 0));
-  };
+  const goTo = (target: number) => {
+    if (target >= 1 && target <= 5) {
+      setEditMode(true)
+      setEditing(true)
+      setStep(target)
+    }
+  }
 
-  const goTo = (step: number) => {
-    // Review's Edit buttons target steps 1 through 5.
-    if (step < 1 || step > 5) return;
-    setEditing(true);
-    setCurrentStep(step);
-  };
+  const onEditProfile = () => {
+    setReturnScreen(screen)
+    setEditMode(true)
+    setEditing(false)
+    setStep(6)
+  }
 
-  const reset = () => {
+  const onRestartOnboarding = () => {
+    setProfile({ ...DEFAULT_PROFILE, conditions: [], trustedContacts: [] })
+    setMessages([])
+    setStep(0)
+    setEditing(false)
+    setEditMode(false)
+    setScreen('home')
     try {
-      window.localStorage.removeItem(PROFILE_STORAGE_KEY);
-      window.localStorage.removeItem(LEGACY_COMPLETE_KEY);
-    } catch {
-      // Reset the in-memory state even if local storage is unavailable.
+      localStorage.removeItem(STORAGE_KEYS.lastEmergency)
+      localStorage.removeItem('iranwo-emergency-reason')
+    } catch { /* Ignore blocked storage. */ }
+    setEmergencyStartedAt(null)
+    setEmergencyReason('')
+    setDispatchState('idle')
+    setDispatchMessage('')
+    setEmergencyBypass(false)
+  }
+
+  const openChat = (prompt = '') => {
+    setDraftPrompt(prompt)
+    setScreen('chat')
+  }
+
+  const navigate = (target: ScreenName) => {
+    if (emergencyBypass && target === 'home') {
+      setEmergencyBypass(false)
+      setScreen('home')
+      return
     }
-    setProfile({ ...DEFAULT_PROFILE });
-    setEditing(false);
-    setCurrentStep(0);
-  };
+    setScreen(target)
+  }
 
-  const stepProps = { profile, update, next, back, goTo, editing, reset };
+  const updatePreferences = (changes: Partial<AppPreferences>) => setPreferences((current) => ({ ...current, ...changes }))
 
-  switch (currentStep) {
-    case 0:
-      return <WelcomeStep {...stepProps} />;
-    case 1:
-      return <LanguageStep {...stepProps} />;
-    case 2:
-      return <PersonalInfoStep {...stepProps} />;
-    case 3:
-      return <HealthHistoryStep {...stepProps} />;
-    case 4:
-      return <SymptomsStep {...stepProps} />;
-    case 5:
-      return <TrustedContactStep {...stepProps} />;
-    case 6:
-      return <ReviewStep {...stepProps} />;
-    case 7:
-      return <CompleteStep {...stepProps} />;
-    default:
-      return <HomeStep {...stepProps} />;
+  const dispatchPractitionerRequest = async (startedAt: number, reason: string): Promise<EmergencyDispatchResult> => {
+    setDispatchState('sending')
+    setDispatchMessage('Checking the practitioner service connection…')
+    const savedContacts = preferences.autoAlertTrustedContacts
+      ? getContacts(profile).map(({ name, relationship, phone }) => ({ name, relationship, phone }))
+      : undefined
+    const result = await requestPractitionerHelp({
+      startedAt,
+      ...(reason.trim() ? { selfReportedReason: reason.trim() } : {}),
+      ...(savedContacts?.length ? { trustedContacts: savedContacts } : {}),
+    })
+    setDispatchState(result.status)
+    setDispatchMessage(result.message)
+    return result
+  }
+
+  const onEmergency = (reason?: string) => {
+    setEmergencyBypass(step < 8)
+    const started = Date.now()
+    const incidentReason = reason ?? ''
+    setEmergencyStartedAt(started)
+    setEmergencyReason(incidentReason)
+    try {
+      localStorage.setItem(STORAGE_KEYS.lastEmergency, String(started))
+      if (incidentReason) localStorage.setItem('iranwo-emergency-reason', incidentReason)
+      else localStorage.removeItem('iranwo-emergency-reason')
+    } catch { /* Emergency UI must still open if storage fails. */ }
+    setScreen('urgent')
+    // This only reaches a service if a real endpoint is configured. The screen still opens immediately.
+    void dispatchPractitionerRequest(started, incidentReason)
+  }
+
+  const onRequestPractitioner = (): Promise<EmergencyDispatchResult> => dispatchPractitionerRequest(
+    emergencyStartedAt ?? Date.now(), emergencyReason,
+  )
+
+  const onLoadModel = async () => {
+    setModelLoading(true)
+    setModelError('')
+    setModelProgress(0)
+    setModelStatus('Starting model loader…')
+    try {
+      await loadLocalGemma((progress: ModelProgress) => {
+        setModelProgress(progress.progress)
+        setModelStatus(progress.file ? `${progress.status}: ${progress.file}` : progress.status)
+      })
+      setModelReady(true)
+      setModelProgress(100)
+      setModelStatus('Gemma loaded in memory for this app session.')
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown model-loading error.'
+      setModelError(message)
+      setModelStatus('Model could not be loaded. Review compatibility and browser support.')
+      throw error
+    } finally { setModelLoading(false) }
+  }
+
+  const shared = { profile, update: updateProfile, next, back, goTo, editing: editing || (editMode && step === 6), reset: onRestartOnboarding, onEmergency }
+  if (step < 8 && !emergencyBypass) {
+    switch (step) {
+      case 0: return <WelcomeStep {...shared} />
+      case 1: return <LanguageStep {...shared} />
+      case 2: return <PersonalInfoStep {...shared} />
+      case 3: return <HealthHistoryStep {...shared} />
+      case 4: return <SymptomsStep {...shared} />
+      case 5: return <TrustedContactStep {...shared} />
+      case 6: return <ReviewStep {...shared} />
+      case 7: return <CompleteStep {...shared} />
+      default: return null
+    }
+  }
+
+  const props = {
+    profile, updateProfile, screen, navigate, openChat, messages, setMessages,
+    draftPrompt, setDraftPrompt, onEmergency, emergencyStartedAt, emergencyReason, onRequestPractitioner, dispatchState, dispatchMessage, selectedClinic,
+    setSelectedClinic, modelReady, modelLoading, modelProgress, modelStatus, modelError,
+    onLoadModel, preferences, updatePreferences, onEditProfile, onRestartOnboarding,
+    onClearChat: () => setMessages([]),
+  }
+  switch (screen) {
+    case 'chat': return <ChatScreen {...props} />
+    case 'symptoms': return <SymptomScreen {...props} />
+    case 'urgent': return <UrgentHelpScreen {...props} />
+    case 'clinics': return <ClinicsScreen {...props} />
+    case 'clinic-details': return <ClinicDetailsScreen {...props} />
+    case 'contacts': return <ContactsScreen {...props} />
+    case 'profile': return <ProfileScreen {...props} />
+    case 'settings': return <SettingsScreen {...props} />
+    case 'model': return <ModelSetupScreen {...props} />
+    case 'guide': return <EmergencyGuideScreen {...props} />
+    case 'location': return <LocationScreen {...props} />
+    default: return <DashboardScreen {...props} />
   }
 }
-
-export default App;
