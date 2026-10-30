@@ -1,75 +1,26 @@
-# React + TypeScript + Vite
+# Iranwo Next — interactive healthcare prototype
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+A responsive React + TypeScript application with a custom SVG doctor/stethoscope welcome logo, onboarding, language selection (English, Yoruba, Nigerian Pidgin, Hausa and Igbo), required name/age/sex, condition-specific animated cards, country-aware phone entry, trusted contacts, animated completion, dashboard, prototype chat, demo clinic listings and an SOS screen.
 
-Currently, two official plugins are available:
-
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
-
-## React Compiler
-
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-
+## Run locally
+```powershell
+npm.cmd install
+npm.cmd run dev
+```
+Build and preview:
+```powershell
+npm.cmd run build
+npm.cmd run preview
 ```
 
-You can also install [eslint-plugin-react-x](https://npmx.dev/package/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://npmx.dev/package/eslint-plugin-react-dom) for React-specific lint rules:
-
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
-
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-
-```
+## Important implementation notes
+- User profile and contacts are stored in browser `localStorage`. This is not encrypted storage. Avoid entering sensitive health details on a shared device.
+- The five languages have translated interface copy, but clinical wording should be reviewed by fluent native speakers before a real-world launch. Language selection does not automatically translate model-generated medical responses; that requires multilingual model prompting or a translation/localization layer.
+- The chat is a local demo responder, not a connected AI model and not a medical diagnostic tool.
+- Clinic records are fictional examples and must not be represented as verified nearby facilities.
+- The emergency number defaults to `112` as a configurable placeholder. Verify local emergency routing, deployment region and availability before release.
+- SOS opens the phone dialer with a `tel:` link after a user tap. Trusted-contact calling and SMS are also user-initiated. A browser cannot reliably call multiple people or send SMS silently in the background. Do not represent a call or alert as completed unless the receiving service confirms it.
+- Real automated notifications require a backend, explicit consent, verified contacts, delivery receipts, retries and a monitored emergency response workflow. Do not place private API keys in client-side environment variables.
+- The optional `VITE_IRANWO_API_BASE_URL` is a placeholder for future backend integration; no emergency backend is included.
+- Country phone input applies a simple per-country digit count for the included sample countries. For production-grade international validation, use a maintained phone-number library such as `libphonenumber-js`.
+- Animations respect `prefers-reduced-motion`.

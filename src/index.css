@@ -2,23 +2,25 @@
 
 @theme {
   --font-sans: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
-
-  --color-iranwo-cream: #F7F4EA;
-  --color-iranwo-forest: #1D4939;
-  --color-iranwo-sage: #D8E7D8;
-  --color-iranwo-text: #173B34;
-  --color-iranwo-muted: #647873;
+  --color-iranwo-cream: #F7F5EF;
+  --color-iranwo-forest: #173F35;
+  --color-iranwo-green: #245C49;
+  --color-iranwo-sage: #DDE8D9;
+  --color-iranwo-text: #202923;
+  --color-iranwo-muted: #747E76;
+  --color-iranwo-emergency: #C92D37;
 }
 
 :root {
-  font-family: var(--font-sans);
-  color: var(--color-iranwo-text);
-  background: var(--color-iranwo-cream);
-
+  font-family: "Plus Jakarta Sans", sans-serif;
+  font-weight: lighter;
+  color: #202923;
+  background: #F7F5EF;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  font-optical-sizing: auto;
 }
 
 *,
@@ -30,13 +32,15 @@
 html {
   min-width: 320px;
   min-height: 100%;
+  scroll-behavior: smooth;
 }
 
 body {
   margin: 0;
   min-width: 320px;
   min-height: 100vh;
-  background: var(--color-iranwo-cream);
+  min-height: 100svh;
+  background: #F7F5EF;
 }
 
 #root {

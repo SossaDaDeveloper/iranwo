@@ -1,9 +1,7 @@
-
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import { VitePWA } from 'vite-plugin-pwa'
-
 
 export default defineConfig({
   plugins: [
@@ -16,8 +14,8 @@ export default defineConfig({
         name: 'Iranwo Health Companion',
         short_name: 'Iranwo',
         description: 'Help is closer than you think.',
-        theme_color: '#f7f4ea',
-        background_color: '#f7f4ea',
+        theme_color: '#F7F5EF',
+        background_color: '#F7F5EF',
         display: 'standalone',
         start_url: '/',
         icons: [
@@ -30,9 +28,7 @@ export default defineConfig({
         ],
       },
       workbox: {
-        globPatterns: [
-          '**/*.{js,css,html,svg,ico,png,webp,woff2}',
-        ],
+        globPatterns: ['**/*.{js,css,html,svg,png,ico,woff2}'],
         navigateFallback: 'index.html',
         cleanupOutdatedCaches: true,
       },
