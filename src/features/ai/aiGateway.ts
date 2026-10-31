@@ -6,7 +6,8 @@ const REQUEST_TIMEOUT_MS = 50_000
 const MAX_MESSAGE_LENGTH = 2_000
 const MAX_HISTORY_TURNS = 8
 
-const configuredEndpoint = import.meta.env.VITE_IRANWO_AI_ENDPOINT?.trim() || (import.meta.env.DEV ? '/api/ai/assistant' : '')
+// Use the same API route in local development and Vercel production.
+const configuredEndpoint = import.meta.env.VITE_IRANWO_AI_ENDPOINT?.trim() || '/api/ai/assistant'
 
 export function isCloudAIConfigured(): boolean {
   return configuredEndpoint.length > 0
