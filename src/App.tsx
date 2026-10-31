@@ -1,26 +1,57 @@
 import { useEffect, useMemo, useState } from 'react'
+import type { User } from '@supabase/supabase-js'
 import {
-  Activity, ArrowDownLeft, ArrowLeft, ArrowRight, Check, CheckCircle2,
+  Activity, ArrowDownLeft, ArrowLeft, ArrowRight, Check, CheckCircle2, Hospital,
   ChevronDown, ChevronRight, CircleHelp, Clock3, HeartPulse, Home, Languages,
-  MapPin, MessageCircle, Phone, Plus, Send, Settings, ShieldCheck, Siren,
+  CloudDownload, MapPin, MessageCircle, Phone, Plus, Send, Settings, ShieldCheck, Siren,
   Sparkles, Stethoscope, UserRound, Users, Wifi, X, Zap,
 } from 'lucide-react'
 import WelcomeLanding from './components/onboarding/WelcomeLanding'
+import { signOutFromSupabase, supabase } from './supabase'
+import ClinicDashboard from './features/clinic/ClinicDashboard'
+import PatientClinicSharing from './features/clinic/PatientClinicSharing'
+import { loadProfile } from './features/profile/storage'
 import { runAssistantTurn } from './features/ai/assistantOrchestrator'
 import type { AgentAssessments } from './features/ai/agent.types'
 import { isCloudAIConfigured } from './features/ai/aiGateway'
 import type { SafetyAssessment } from '../features/safety/safetyEngine'
 import { confirmCurrentEmergency, dismissClarification } from '../features/safety/safetyEngine'
 import SafetyAlert from './features/safety/SafetyAlert'
+import './features/app/account.css'
 
 type Language = 'en' | 'yo' | 'pcm' | 'ha' | 'ig'
-type Sex = 'Female' | 'Male' | 'Prefer not to say'
+type Sex = 'Female' | 'Male' | 'Intersex' | 'Prefer not to say'
 type Condition = 'sickle' | 'asthma' | 'diabetes' | 'seizures' | 'hypertension' | 'heart' | 'other'
 type Contact = { name: string; relationship: string; country: string; phone: string }
-type Profile = { name: string; age: string; sex: Sex | ''; language: Language; country: string; phone: string; conditions: Condition[]; customConditions: string[]; notes: string; contacts: Contact[] }
-type Screen = 'welcome' | 'language' | 'personal' | 'health' | 'contacts' | 'review' | 'complete' | 'home' | 'chat' | 'clinics' | 'profile' | 'emergency'
+type Profile = {
+  name: string
+  age: string
+  sex: Sex | ''
+  language: Language
+  country: string
+  phone: string
+  conditions: Condition[]
+  customConditions: string[]
+  notes: string
+  contacts: Contact[]
+  allergy: string
+  allergyText: string
+  medication: string
+  medicationText: string
+  symptomsNow: string
+  symptomsText: string
+  recurring: string
+  recurringText: string
+  notifyOnEmergency?: boolean
+}
+type Screen = 'welcome' | 'language' | 'personal' | 'health' | 'contacts' | 'review' | 'complete' | 'home' | 'chat' | 'clinics' | 'profile' | 'account' | 'emergency' | 'clinic'
 
-const blankProfile: Profile = { name: '', age: '', sex: '', language: 'en', country: 'NG', phone: '', conditions: [], customConditions: [], notes: '', contacts: [] }
+const blankProfile: Profile = {
+  name: '', age: '', sex: '', language: 'en', country: 'NG', phone: '',
+  conditions: [], customConditions: [], notes: '', contacts: [],
+  allergy: '', allergyText: '', medication: '', medicationText: '',
+  symptomsNow: '', symptomsText: '', recurring: '', recurringText: '',
+}
 
 const copy: Record<Language, Record<string, string>> = {
   en: {
@@ -81,16 +112,79 @@ const initialMessages = [
   { role: 'assistant', text: 'Hi! I’m here to help you think through general health questions. What would you like to understand today?' },
 ]
 const key = 'iranwo-next-v1'
+const accountOwnerKey = 'iranwo-next-supabase-user'
 
 function readSaved(): { profile: Profile; onboarded: boolean } {
+  const legacy = loadProfile()
+  const legacyConditionIds: Record<string, Condition> = {
+    'Sickle cell disease': 'sickle',
+    Asthma: 'asthma',
+    Diabetes: 'diabetes',
+    'High blood pressure': 'hypertension',
+    Epilepsy: 'seizures',
+    Other: 'other',
+    sickle: 'sickle',
+    asthma: 'asthma',
+    diabetes: 'diabetes',
+    seizures: 'seizures',
+    hypertension: 'hypertension',
+    heart: 'heart',
+    other: 'other',
+  }
+  const legacyProfile: Profile = {
+    ...blankProfile,
+    name: legacy.firstName,
+    age: legacy.age == null ? '' : String(legacy.age),
+    sex: ['Female', 'Male', 'Intersex', 'Prefer not to say'].includes(legacy.sex) ? legacy.sex as Sex : '',
+    language: ['en', 'yo', 'pcm', 'ha', 'ig'].includes(legacy.language) ? legacy.language as Language : 'en',
+    conditions: [...new Set(legacy.conditions.flatMap((condition) => legacyConditionIds[condition] ? [legacyConditionIds[condition]] : []))],
+    customConditions: legacy.conditionOther ? [legacy.conditionOther] : [],
+    notes: legacy.notes,
+    contacts: (legacy.trustedContacts ?? []).map((contact) => ({
+      name: contact.name,
+      relationship: contact.relationship,
+      country: 'NG',
+      phone: contact.phone,
+    })),
+    allergy: legacy.allergy,
+    allergyText: legacy.allergyText,
+    medication: legacy.medication,
+    medicationText: legacy.medicationText,
+    symptomsNow: legacy.symptomsNow,
+    symptomsText: legacy.symptomsText,
+    recurring: legacy.recurring,
+    recurringText: legacy.recurringText,
+  }
   try {
     const raw = localStorage.getItem(key)
     if (raw) {
       const parsed = JSON.parse(raw)
-      return { profile: { ...blankProfile, ...parsed.profile, customConditions: Array.isArray(parsed.profile?.customConditions) ? parsed.profile.customConditions : [] }, onboarded: Boolean(parsed.onboarded) }
+      const savedProfile = parsed.profile && typeof parsed.profile === 'object' ? parsed.profile : {}
+      return {
+        profile: {
+          ...legacyProfile,
+          ...savedProfile,
+          conditions: Array.isArray(savedProfile.conditions) ? savedProfile.conditions : legacyProfile.conditions,
+          customConditions: Array.isArray(savedProfile.customConditions) ? savedProfile.customConditions : legacyProfile.customConditions,
+          contacts: Array.isArray(savedProfile.contacts) ? savedProfile.contacts : legacyProfile.contacts,
+        },
+        onboarded: Boolean(parsed.onboarded || legacy.onboardingComplete),
+      }
     }
   } catch { /* storage unavailable */ }
-  return { profile: blankProfile, onboarded: false }
+  return { profile: legacyProfile, onboarded: legacy.onboardingComplete }
+}
+
+function normalizeProfile(value: unknown): Profile {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return blankProfile
+  const saved = value as Partial<Profile>
+  return {
+    ...blankProfile,
+    ...saved,
+    conditions: Array.isArray(saved.conditions) ? saved.conditions : [],
+    customConditions: Array.isArray(saved.customConditions) ? saved.customConditions : [],
+    contacts: Array.isArray(saved.contacts) ? saved.contacts : [],
+  }
 }
 
 function DoctorMark() {
@@ -128,7 +222,7 @@ function App() {
   const saved = useMemo(readSaved, [])
   const [profile, setProfile] = useState<Profile>(saved.profile)
   const [onboarded, setOnboarded] = useState(saved.onboarded)
-  const [screen, setScreen] = useState<Screen>(saved.onboarded ? 'home' : 'welcome')
+  const [screen, setScreen] = useState<Screen>(saved.onboarded ? 'home' : 'account')
   const [stepDirection, setStepDirection] = useState<'next' | 'back'>('next')
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [contactDraft, setContactDraft] = useState<Contact>({ name: '', relationship: 'Family', country: 'NG', phone: '' })
@@ -142,9 +236,21 @@ function App() {
   const [lastAgentAssessments, setLastAgentAssessments] = useState<AgentAssessments | null>(null)
   const [aiSuggestedEscalation, setAiSuggestedEscalation] = useState(false)
   const [toast, setToast] = useState('')
+  const [emergencyReason, setEmergencyReason] = useState('')
+  const [emergencyShareState, setEmergencyShareState] = useState<'idle' | 'sending' | 'shared'>('idle')
+  const [shareEmergencyLocation, setShareEmergencyLocation] = useState(false)
   const [emergencyContactIndex, setEmergencyContactIndex] = useState('0')
   const [showContactForm, setShowContactForm] = useState(false)
   const [customConditionDraft, setCustomConditionDraft] = useState('')
+  const [authUser, setAuthUser] = useState<User | null>(null)
+  const [syncReadyUserId, setSyncReadyUserId] = useState<string | null>(null)
+  const [syncState, setSyncState] = useState<'local' | 'loading' | 'syncing' | 'synced' | 'error'>('local')
+  const [authMode, setAuthMode] = useState<'signin' | 'signup'>('signup')
+  const [authEmail, setAuthEmail] = useState('')
+  const [authPassword, setAuthPassword] = useState('')
+  const [authBusy, setAuthBusy] = useState(false)
+  const [authError, setAuthError] = useState('')
+  const [authMessage, setAuthMessage] = useState('')
   const t = copy[profile.language] ?? copy.en
   const selectedCountry = countryOptions.find(c => c.code === profile.country) ?? countryOptions[0]
   const localPhoneDigits = profile.phone.replace(/\D/g, '')
@@ -156,6 +262,180 @@ function App() {
   useEffect(() => {
     try { localStorage.setItem(key, JSON.stringify({ profile, onboarded })) } catch { /* storage can be unavailable */ }
   }, [profile, onboarded])
+
+  useEffect(() => {
+    const client = supabase
+    if (!client) return
+
+    let active = true
+    let requestId = 0
+    let authEventTimeout = 0
+    const loadAccount = async (user: User | null) => {
+      const currentRequestId = ++requestId
+      setAuthUser(user)
+      setSyncReadyUserId(null)
+      setSyncState(user ? 'loading' : 'local')
+      setAuthError('')
+      setAuthMessage('')
+      if (!user) return
+
+      const { data, error } = await client
+        .from('user_profiles')
+        .select('profile, onboarded')
+        .eq('user_id', user.id)
+        .maybeSingle()
+      if (!active || currentRequestId !== requestId) return
+      if (error) {
+        setAuthError(`Could not load your cloud profile: ${error.message}`)
+        setSyncState('error')
+        return
+      }
+
+      if (data) {
+        try {
+          localStorage.setItem(accountOwnerKey, user.id)
+        } catch {
+          setAuthError('Could not verify the account linked to this device. Cloud profile loading is paused.')
+          setSyncState('error')
+          return
+        }
+        setProfile(normalizeProfile(data.profile))
+        setOnboarded(Boolean(data.onboarded))
+      } else {
+        let previousOwner: string | null
+        try {
+          previousOwner = localStorage.getItem(accountOwnerKey)
+        } catch {
+          setAuthError('Could not verify the account linked to this device. Cloud sync is paused to protect your profile.')
+          setSyncState('error')
+          return
+        }
+        if (previousOwner && previousOwner !== user.id) {
+          setAuthError('This device was previously linked to a different account. To protect your health information, sign in with that account or clear this site’s local data before using another account.')
+          setSyncState('error')
+          return
+        }
+        try {
+          localStorage.setItem(accountOwnerKey, user.id)
+        } catch {
+          setAuthError('Could not verify the account linked to this device. Cloud sync is paused to protect your profile.')
+          setSyncState('error')
+          return
+        }
+        const { error: saveError } = await client.from('user_profiles').upsert({
+          user_id: user.id,
+          profile,
+          onboarded,
+        }, { onConflict: 'user_id' })
+        if (!active || currentRequestId !== requestId) return
+        if (saveError) {
+          setAuthError(`Could not save your profile to the cloud: ${saveError.message}`)
+          setSyncState('error')
+          return
+        }
+      }
+      setSyncReadyUserId(user.id)
+      setSyncState('synced')
+    }
+
+    const { data: { subscription } } = client.auth.onAuthStateChange((_event, session) => {
+      window.clearTimeout(authEventTimeout)
+      authEventTimeout = window.setTimeout(() => {
+        void loadAccount(session?.user ?? null)
+      }, 0)
+    })
+    void client.auth.getSession().then(({ data, error }) => {
+      if (!active) return
+      if (error) {
+        setAuthError(`Could not check your sign-in session: ${error.message}`)
+        setSyncState('error')
+      } else {
+        void loadAccount(data.session?.user ?? null)
+      }
+    })
+
+    return () => {
+      active = false
+      requestId += 1
+      window.clearTimeout(authEventTimeout)
+      subscription.unsubscribe()
+    }
+  }, [])
+
+  useEffect(() => {
+    const client = supabase
+    if (!client || !authUser || syncReadyUserId !== authUser.id) return
+    const timeout = window.setTimeout(async () => {
+      setSyncState('syncing')
+      const { error } = await client.from('user_profiles').upsert({
+        user_id: authUser.id,
+        profile,
+        onboarded,
+        updated_at: new Date().toISOString(),
+      }, { onConflict: 'user_id' })
+      if (error) {
+        setAuthError(`Could not sync your profile: ${error.message}`)
+        setSyncState('error')
+      } else {
+        setAuthError('')
+        setSyncState('synced')
+      }
+    }, 600)
+    return () => window.clearTimeout(timeout)
+  }, [authUser, syncReadyUserId, profile, onboarded])
+
+  const submitAuth = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (!supabase) return
+    setAuthBusy(true)
+    setAuthError('')
+    setAuthMessage('')
+    try {
+      if (authMode === 'signup') {
+        const { data, error } = await supabase.auth.signUp({
+          email: authEmail.trim(),
+          password: authPassword,
+          options: { emailRedirectTo: window.location.origin },
+        })
+        if (error) throw error
+        if (!data.session) {
+          setAuthMessage('Check your email to confirm your account, then sign in here.')
+        } else {
+          setAuthMessage('Account created. Your profile is syncing to your Supabase account.')
+        }
+      } else {
+        const { error } = await supabase.auth.signInWithPassword({
+          email: authEmail.trim(),
+          password: authPassword,
+        })
+        if (error) throw error
+        setAuthMessage('Signed in. Loading your cloud profile…')
+      }
+    } catch (error) {
+      setAuthError(error instanceof Error ? error.message : 'Authentication failed.')
+    } finally {
+      setAuthBusy(false)
+    }
+  }
+
+  const signOut = async () => {
+    if (!supabase || !authUser) return
+    setAuthBusy(true)
+    setAuthError('')
+    setAuthMessage('')
+    try {
+      await signOutFromSupabase()
+      setAuthUser(null)
+      setSyncReadyUserId(null)
+      setSyncState('local')
+      setAuthPassword('')
+      go('welcome', 'back')
+    } catch (error) {
+      setAuthError(error instanceof Error ? `Could not sign out: ${error.message}` : 'Could not sign out. Please try again.')
+    } finally {
+      setAuthBusy(false)
+    }
+  }
 
   useEffect(() => {
     if (!toast) return
@@ -312,7 +592,74 @@ function App() {
     setMessages(current => [...current, { role: 'assistant', text: dismissed.userMessage }])
   }
 
-  const openEmergency = () => go('emergency')
+  const openEmergency = () => {
+    setSafetyAssessment(null)
+    setAiSuggestedEscalation(false)
+    setEmergencyReason('')
+    setEmergencyShareState('idle')
+    setShareEmergencyLocation(false)
+    go('emergency')
+  }
+  const shareEmergencyWithClinic = async () => {
+    if (!supabase || !authUser) {
+      setToast('Sign in to share an alert with a clinic. This device-only profile is not visible to clinic staff.')
+      return
+    }
+    setEmergencyShareState('sending')
+    let alertShared = false
+    try {
+      const { data: grants, error: grantsError } = await supabase
+        .from('patient_clinic_access')
+        .select('clinic_id')
+        .eq('patient_id', authUser.id)
+        .is('revoked_at', null)
+      if (grantsError) {
+        setToast(`Could not check clinic permissions: ${grantsError.message}`)
+        return
+      }
+      if (!grants?.length) {
+        setToast('No clinic has permission to receive your alerts. Share your profile with a clinic first.')
+        return
+      }
+      let position: GeolocationPosition | null = null
+      let locationUnavailable = false
+      if (shareEmergencyLocation) {
+        if (!navigator.geolocation) {
+          locationUnavailable = true
+        } else {
+          try {
+            position = await new Promise<GeolocationPosition>((resolve, reject) => {
+              navigator.geolocation.getCurrentPosition(resolve, reject, { maximumAge: 60_000, timeout: 10_000 })
+            })
+          } catch {
+            locationUnavailable = true
+          }
+        }
+      }
+      const { error: alertError } = await supabase.from('patient_emergency_alerts').insert(
+        grants.map((grant) => ({
+          patient_id: authUser.id,
+          clinic_id: grant.clinic_id,
+          reason: emergencyReason.trim() || null,
+          latitude: position?.coords.latitude ?? null,
+          longitude: position?.coords.longitude ?? null,
+          location_shared: position !== null,
+        }))
+      )
+      if (alertError) {
+        setToast(`Could not share the alert: ${alertError.message}`)
+        return
+      }
+      setEmergencyShareState('shared')
+      alertShared = true
+      setToast(`Alert shared with ${grants.length} authorized clinic${grants.length === 1 ? '' : 's'}.${position ? ' Your location was included.' : locationUnavailable ? ' Location was not available; no coordinates were shared.' : ' No location was included.'} No emergency service was contacted.`)
+    } catch (error) {
+      setEmergencyShareState('idle')
+      setToast(error instanceof Error ? `Could not share the alert: ${error.message}` : 'Could not share the alert. Please try again or use the emergency call option.')
+    } finally {
+      if (!alertShared) setEmergencyShareState('idle')
+    }
+  }
   const emergencyNumber = (import.meta.env.VITE_IRANWO_EMERGENCY_NUMBER || '112').replace(/[^\d+]/g, '')
   const selectedTrusted = profile.contacts[Number(emergencyContactIndex)] ?? profile.contacts[0]
   const trustedE164 = selectedTrusted ? `${(countryOptions.find(c => c.code === selectedTrusted.country) ?? countryOptions[0]).dial}${selectedTrusted.phone.replace(/\D/g, '').replace(/^0+/, '')}` : ''
@@ -331,14 +678,46 @@ function App() {
     window.location.href = `tel:${emergencyNumber}`
   }
 
+  useEffect(() => {
+    if (screen === 'account' && !onboarded && authUser && syncReadyUserId === authUser.id && syncState === 'synced') {
+      setScreen('welcome')
+    }
+  }, [authUser, onboarded, screen, syncReadyUserId, syncState])
+
+  if (screen === 'clinic') {
+    return <ClinicDashboard
+      onPatientApp={() => go(onboarded ? 'home' : 'welcome', 'back')}
+      onSignedOut={() => go('welcome', 'back')}
+    />
+  }
+
   return <div className="app-shell">
     <div className="ambient ambient-one" /><div className="ambient ambient-two" />
-    {screen !== 'welcome' && screen !== 'language' && screen !== 'personal' && screen !== 'health' && screen !== 'contacts' && screen !== 'review' && screen !== 'complete' && <header className="app-header">
+    {screen !== 'welcome' && screen !== 'language' && screen !== 'personal' && screen !== 'health' && screen !== 'contacts' && screen !== 'review' && screen !== 'complete' && screen !== 'account' && <header className="app-header">
       <button className="brand-lockup" onClick={() => go('home')} aria-label="Iranwo home"><span className="brand-icon"><Stethoscope size={19}/></span><span>iranwo<span className="brand-dot">.</span></span></button>
-      <div className="header-right"><span className="status-pill"><span className="status-dot"/>{t.online}</span><button className="icon-button" onClick={() => { setEditingProfile(true); go('profile') }} aria-label={t.settings}><Settings size={18}/></button><button className="sos-mini" onClick={openEmergency}><Siren size={16}/><span>SOS</span></button></div>
+      <div className="header-right"><span className="status-pill"><span className="status-dot"/>{t.online}</span><button className="icon-button" onClick={() => go('account')} aria-label="Account and cloud sync" title="Account and cloud sync"><CloudDownload size={18}/></button><button className="icon-button" onClick={() => { setEditingProfile(true); go('profile') }} aria-label={t.settings}><Settings size={18}/></button><button className="sos-mini" onClick={openEmergency}><Siren size={16}/><span>SOS</span></button></div>
     </header>}
 
     <main className={`main-stage screen-${screen} transition-${stepDirection}`} key={screen}>
+      {screen === 'account' && <AccountScreen
+        user={authUser}
+        configured={Boolean(supabase)}
+        syncState={syncState}
+        mode={authMode}
+        email={authEmail}
+        password={authPassword}
+        busy={authBusy}
+        error={authError}
+        message={authMessage}
+        onBack={() => go(onboarded ? 'home' : 'welcome', 'back')}
+        onModeChange={setAuthMode}
+        onEmailChange={setAuthEmail}
+        onPasswordChange={setAuthPassword}
+        onSubmit={submitAuth}
+        onSignOut={() => { void signOut() }}
+        onContinueOffline={() => go('welcome')}
+      />}
+
       {screen === 'welcome' && (
         <WelcomeLanding
           bodyText={t.welcomeBody}
@@ -347,6 +726,7 @@ function App() {
           onGetStarted={() => go('language')}
           onContinue={() => go('home')}
           onEmergency={openEmergency}
+          onClinicDashboard={() => go('clinic')}
         />
       )}
 
@@ -384,6 +764,7 @@ function App() {
             <button type="button" className="icon-button danger-icon" onClick={() => removeCustomCondition(index)} aria-label={`Remove ${condition}`}><X size={16}/></button>
           </div>)}
         </div>}
+        <HealthDetailsFields profile={profile} onFieldChange={setField}/>
         <Field label={t.notes} hint="Optional — only share what you’re comfortable sharing."><textarea rows={3} value={profile.notes} onChange={e => setField('notes', e.target.value)} placeholder={t.notesPlaceholder}/></Field>
         <div className="card-bottom"><span className="small-note">Optional · You can update this later</span><button className="button button-primary" onClick={() => go('contacts')}>{t.continue}<ArrowRight size={17}/></button></div>
       </section>}
@@ -401,7 +782,7 @@ function App() {
         <StepTop step={5} total={6} progress={stepProgress} back={() => go('contacts', 'back')} t={t}/>
         <div className="section-icon"><ShieldCheck size={24}/></div><p className="eyebrow">ALMOST THERE</p><h1 style={{fontWeight: 400}}>{t.reviewTitle}</h1><p className="muted">{t.reviewHelp}</p>
         <div className="review-stack"><ReviewRow icon={<UserRound size={19}/>} label={t.fullName} value={profile.name} onEdit={() => go('personal','back')}/><ReviewRow icon={<Activity size={19}/>} label={`${t.age} · ${t.sex}`} value={`${profile.age} years · ${profile.sex}`} onEdit={() => go('personal','back')}/><ReviewRow icon={<HeartPulse size={19}/>} label={t.conditions} value={selectedConditionCount ? selectedConditionNames.join(', ') : t.none} onEdit={() => go('health','back')}/><ReviewRow icon={<Users size={19}/>} label={t.trustedTitle} value={`${profile.contacts.length} ${t.trustedSaved}`} onEdit={() => go('contacts','back')}/><ReviewRow icon={<Languages size={19}/>} label={t.chooseLanguage} value={languageOptions.find(l => l.id === profile.language)?.name ?? 'English'} onEdit={() => go('language','back')}/></div>
-        <div className="privacy-note"><ShieldCheck size={20}/><span><strong>Your information is stored on this device</strong><small>This prototype does not send your profile to a backend. Avoid entering information on a shared device.</small></span></div>
+        <div className="privacy-note"><ShieldCheck size={20}/><span><strong>Your information is currently stored on this device</strong><small>You can optionally connect a Supabase account from the cloud icon after setup to sync this profile between devices.</small></span></div>
         <div className="card-bottom"><span className="small-note">One last step ✨</span><button className="button button-primary" onClick={finish}>Finish setup<Sparkles size={17}/></button></div>
       </section>}
 
@@ -417,7 +798,7 @@ function App() {
         <div className="section-heading"><div><p className="eyebrow">HERE WHEN YOU NEED IT</p><h2>How can we help today?</h2></div><Sparkles size={21}/></div>
         <div className="action-grid"><button className="action-card chat-action" onClick={() => go('chat')}><span className="action-icon"><MessageCircle size={22}/></span><span className="action-title">{t.talk}</span><span className="action-description">{t.talkBody}</span><span className="action-arrow"><ArrowRight size={16}/></span><span className="card-blob"/></button><button className="action-card clinic-action" onClick={() => go('clinics')}><span className="action-icon"><MapPin size={22}/></span><span className="action-title">{t.nearby}</span><span className="action-description">{t.nearbyBody}</span><span className="action-arrow"><ArrowRight size={16}/></span><span className="card-blob"/></button></div>
         <div className="section-heading snapshot-heading"><div><p className="eyebrow">PERSONAL TO YOU</p><h2>{t.healthSnapshot}</h2></div><button className="text-button" onClick={() => go('profile')}>Edit profile <ArrowRight size={15}/></button></div>
-        <div className="snapshot-card"><div className="snapshot-top"><div className="snapshot-icon"><HeartPulse size={21}/></div><div><strong>{selectedConditionCount ? selectedConditionCount : 'No'} {t.conditionsSaved}</strong><small>{selectedConditionCount ? selectedConditionNames.join(' · ') : 'Add conditions whenever you are ready.'}</small></div><ChevronRight size={19}/></div><div className="snapshot-divider"/><div className="snapshot-bottom"><span><Users size={16}/>{profile.contacts.length} {t.trustedSaved}</span><span><ShieldCheck size={16}/>Private on this device</span></div></div>
+        <div className="snapshot-card"><div className="snapshot-top"><div className="snapshot-icon"><HeartPulse size={21}/></div><div><strong>{selectedConditionCount ? selectedConditionCount : 'No'} {t.conditionsSaved}</strong><small>{selectedConditionCount ? selectedConditionNames.join(' · ') : 'Add conditions whenever you are ready.'}</small></div><ChevronRight size={19}/></div><div className="snapshot-divider"/><div className="snapshot-bottom"><span><Users size={16}/>{profile.contacts.length} {t.trustedSaved}</span><span><ShieldCheck size={16}/>{authUser ? 'Synced to your account' : 'Saved on this device'}</span></div></div>
         <div className="disclaimer-strip"><CircleHelp size={17}/><span>Iranwo supports your health journey but does not replace a qualified clinician.</span></div>
       </section>}
 
@@ -451,11 +832,144 @@ function App() {
         </div>}
       </div><div className="profile-contacts"><div className="condition-heading"><strong>{t.trustedTitle}</strong><button className="text-button" onClick={() => setShowContactForm(v=>!v)}><Plus size={15}/> Add</button></div>{profile.contacts.map((c,i)=><div className="saved-contact" key={c.phone+i}><div className="contact-avatar">{c.name[0]}</div><div className="contact-info"><strong>{c.name}</strong><small>{c.relationship} · {c.phone}</small></div><button className="icon-button danger-icon" onClick={()=>setField('contacts',profile.contacts.filter((_,j)=>j!==i))}><X size={16}/></button></div>)}{showContactForm&&<div className="contact-form"><div className="form-grid"><Field label={t.contactName}><input value={contactDraft.name} onChange={e=>setContactDraft(c=>({...c,name:e.target.value}))}/></Field><Field label={t.relationship}><input value={contactDraft.relationship} onChange={e=>setContactDraft(c=>({...c,relationship:e.target.value}))}/></Field><Field label={t.country}><select value={contactDraft.country} onChange={e=>setContactDraft(c=>({...c,country:e.target.value,phone:''}))}>{countryOptions.map(c=><option key={c.code} value={c.code}>{c.name} ({c.dial})</option>)}</select></Field><Field label={t.contactPhone}><input value={contactDraft.phone} maxLength={contactCountry.digits} onChange={e=>setContactDraft(c=>({...c,phone:e.target.value.replace(/\D/g,'').slice(0,contactCountry.digits)}))}/></Field></div><button className="button button-primary" onClick={addContact}>{t.addContact}</button></div>}</div><div className="card-bottom"><span className="small-note"><ShieldCheck size={14}/> Stored on this device</span><button className="button button-primary" onClick={()=>{if(!profile.name.trim()||!profile.age||!profile.sex){setToast('Name, age and sex are required.');return}setToast(t.saved);go('home')}}>{t.save}<Check size={17}/></button></div></section>}
 
+      {screen === 'profile' && <section className="onboarding-card profile-screen"><h2 className="profile-health-heading"><HeartPulse size={20}/>Additional health information</h2><p className="muted">Share allergies, medications and current or recurring symptoms if you choose.</p><HealthDetailsFields profile={profile} onFieldChange={setField}/></section>}
+      {screen === 'profile' && <PatientClinicSharing user={authUser}/>}
+
       {screen === 'emergency' && <section className="emergency-screen"><div className="emergency-top"><button className="icon-button" onClick={() => go('home','back')} aria-label={t.cancel}><X size={20}/></button><span className="emergency-label"><span className="pulse-dot"/> EMERGENCY MODE</span><span className="emergency-time"><Clock3 size={14}/> Act now</span></div><div className="emergency-hero"><div className="emergency-icon-wrap"><div className="emergency-ring ring-a"/><div className="emergency-ring ring-b"/><div className="emergency-icon"><Siren size={35}/></div></div><p className="emergency-kicker">IRANWO SOS</p><h1>{t.urgentTitle}</h1><p>{t.urgentBody}</p></div><button className="emergency-call-main" onClick={handleEmergencyCall}><Phone size={21}/><span><strong>{t.callEmergency}</strong><small> {emergencyNumber} · opens your phone dialer</small></span><ArrowRight size={20}/></button>{profile.contacts.length ? <div className="emergency-contact-panel"><div className="emergency-contact-heading"><Users size={18}/><strong>{t.chooseContact}</strong></div><select value={emergencyContactIndex} onChange={e=>setEmergencyContactIndex(e.target.value)}>{profile.contacts.map((c,i)=><option value={i} key={c.phone}>{c.name} · {c.relationship}</option>)}</select><div className="emergency-contact-actions"><a className="emergency-contact-action" href={`tel:${trustedE164}`}><Phone size={18}/><span>{t.callTrusted}<small>{selectedTrusted?.name}</small></span><ChevronRight size={17}/></a><a className="emergency-contact-action" href={emergencySms}><MessageCircle size={18}/><span>{t.messageTrusted}<small>Opens your messaging app; review before sending</small></span><ChevronRight size={17}/></a></div></div> : <div className="no-contact-panel"><Users size={21}/><p>{t.noContacts}</p><button className="button button-secondary" onClick={()=>go('profile')}>{t.settings}<ArrowRight size={16}/></button></div>}<div className="emergency-safety-note"><ShieldCheck size={18}/><p>{t.emergencyNote} If a seizure lasts 5 minutes, repeats without recovery, or breathing is severely impaired, seek emergency help immediately. Follow local dispatcher instructions.</p></div><button className="emergency-close" onClick={()=>go('home','back')}>{t.cancel}</button></section>}
+      {screen === 'emergency' && <section className="emergency-clinic-share">
+        <h2><Hospital size={19}/>Share alert with an authorized clinic</h2>
+        <p>This creates an alert for clinics you have explicitly shared your profile with. Your location is excluded unless you separately opt in below.</p>
+        <label htmlFor="emergency-clinic-reason">What is happening? (optional)</label>
+        <textarea id="emergency-clinic-reason" value={emergencyReason} onChange={(event) => setEmergencyReason(event.target.value)} rows={3} placeholder="Briefly describe the reason for this alert"/>
+        <label className="emergency-location-consent"><input type="checkbox" checked={shareEmergencyLocation} onChange={(event) => setShareEmergencyLocation(event.target.checked)}/>Include my current location (optional; your browser may ask permission)</label>
+        <button type="button" className="button button-primary" onClick={() => void shareEmergencyWithClinic()} disabled={emergencyShareState !== 'idle'}>
+          <Siren size={17}/>{emergencyShareState === 'sending' ? 'Sharing alert…' : emergencyShareState === 'shared' ? 'Alert shared' : 'Share alert with clinic'}
+        </button>
+        <small role="note">Only the alert and optional reason are shared. Coordinates are included only after you check the box and allow browser location access. No ambulance, emergency service, or trusted contact is contacted by this action.</small>
+      </section>}
     </main>
 
     {['home','chat','clinics','profile'].includes(screen) && <nav className="bottom-nav"><button className={screen==='home'?'nav-active':''} onClick={()=>go('home')}><Home size={19}/><span>Home</span></button><button className={screen==='chat'?'nav-active':''} onClick={()=>go('chat')}><MessageCircle size={19}/><span>Talk</span></button><button className={screen==='clinics'?'nav-active':''} onClick={()=>go('clinics')}><MapPin size={19}/><span>Nearby</span></button><button className={screen==='profile'?'nav-active':''} onClick={()=>go('profile')}><UserRound size={19}/><span>Profile</span></button></nav>}
     {toast && <div role="status" className="toast"><CheckCircle2 size={17}/>{toast}</div>}
+  </div>
+}
+
+function AccountScreen({
+  user,
+  configured,
+  syncState,
+  mode,
+  email,
+  password,
+  busy,
+  error,
+  message,
+  onBack,
+  onModeChange,
+  onEmailChange,
+  onPasswordChange,
+  onSubmit,
+  onSignOut,
+  onContinueOffline,
+}: {
+  user: User | null
+  configured: boolean
+  syncState: 'local' | 'loading' | 'syncing' | 'synced' | 'error'
+  mode: 'signin' | 'signup'
+  email: string
+  password: string
+  busy: boolean
+  error: string
+  message: string
+  onBack: () => void
+  onModeChange: (mode: 'signin' | 'signup') => void
+  onEmailChange: (email: string) => void
+  onPasswordChange: (password: string) => void
+  onSubmit: (event: React.FormEvent<HTMLFormElement>) => void
+  onSignOut: () => void
+  onContinueOffline: () => void
+}) {
+  const status = {
+    local: 'This profile is currently saved on this device only.',
+    loading: 'Loading your profile from Supabase…',
+    syncing: 'Syncing profile changes…',
+    synced: 'Your profile is synced with Supabase.',
+    error: 'Cloud sync needs attention.',
+  }[syncState]
+
+  return <section className="onboarding-card account-screen">
+    <div className="page-title-row">
+      <button className="icon-button" onClick={onBack} aria-label="Back to home"><ArrowLeft size={19}/></button>
+      <div className="title-grow"><p className="eyebrow">YOUR IRANWO ACCOUNT</p><h1>Create your account</h1><p className="muted">Start by creating an account or continue on this device.</p></div>
+    </div>
+    <div className="privacy-note"><ShieldCheck size={20}/><span><strong>Health data is sensitive</strong><small>When signed in, your profile and trusted contacts are stored in your Supabase project. Use a project you control and keep row-level security enabled.</small></span></div>
+    {!configured ? <div className="demo-alert" role="status"><CloudDownload size={18}/><span>Supabase is not configured yet. Add <code>VITE_SUPABASE_URL</code> and <code>VITE_SUPABASE_PUBLISHABLE_KEY</code> to your local <code>.env</code>, then restart the dev server to enable cloud accounts.</span></div> : user ? <>
+      <div className="snapshot-card account-status">
+        <div className="snapshot-top"><div className="snapshot-icon"><CloudDownload size={21}/></div><div><strong>{user.email}</strong><small>{status}</small></div></div>
+      </div>
+      {error && <p className="field-error" role="alert">{error}</p>}
+      {message && <p className="field-hint" role="status">{message}</p>}
+      <button type="button" className="button button-secondary" onClick={onSignOut}>Sign out</button>
+    </> : <>
+      <div className="snapshot-card account-status"><div className="snapshot-top"><div className="snapshot-icon"><ShieldCheck size={21}/></div><div><strong>Device-only mode</strong><small>{status}</small></div></div></div>
+      <form className="account-form" onSubmit={onSubmit}>
+        <Field label="Email" required><input type="email" autoComplete="email" required value={email} onChange={event => onEmailChange(event.target.value)} /></Field>
+        <Field label="Password" required hint="Use at least 8 characters."><input type="password" autoComplete={mode === 'signup' ? 'new-password' : 'current-password'} minLength={8} required value={password} onChange={event => onPasswordChange(event.target.value)} /></Field>
+        {error && <p className="field-error" role="alert">{error}</p>}
+        {message && <p className="field-hint" role="status">{message}</p>}
+        <button type="submit" className="button button-primary" disabled={busy}>{busy ? 'Please wait…' : mode === 'signup' ? 'Create account' : 'Sign in'}<CloudDownload size={17}/></button>
+      </form>
+      <button type="button" className="text-button" onClick={() => { onModeChange(mode === 'signup' ? 'signin' : 'signup') }}>
+        {mode === 'signup' ? 'Already have an account? Sign in' : 'New to Supabase? Create an account'}
+      </button>
+    </>}
+    {!user && <div className="account-entry-actions">
+      <button type="button" className="button button-secondary" onClick={onContinueOffline}>Continue without an account</button>
+    </div>}
+    <p className="small-note account-local-note">Health information on this device is not visible to clinic staff until you sign in, sync it to Supabase, and grant a clinic access using its code.</p>
+  </section>
+}
+
+function HealthDetailsFields({
+  profile,
+  onFieldChange,
+}: {
+  profile: Profile
+  onFieldChange: <K extends keyof Profile>(field: K, value: Profile[K]) => void
+}) {
+  return <div className="health-detail-grid">
+    <Field label="Allergies">
+      <select value={profile.allergy} onChange={(event) => onFieldChange('allergy', event.target.value)}>
+        <option value="">Not provided</option><option>No known allergies</option><option>Yes — specify</option><option>Not sure</option>
+      </select>
+    </Field>
+    {(profile.allergy === 'Yes — specify' || profile.allergyText) && <Field label="Allergy details">
+      <input value={profile.allergyText} onChange={(event) => onFieldChange('allergyText', event.target.value)} placeholder="List known allergies"/>
+    </Field>}
+    <Field label="Current medications">
+      <select value={profile.medication} onChange={(event) => onFieldChange('medication', event.target.value)}>
+        <option value="">Not provided</option><option>No</option><option>Yes</option><option>Not sure</option>
+      </select>
+    </Field>
+    {(profile.medication === 'Yes' || profile.medicationText) && <Field label="Medication details">
+      <input value={profile.medicationText} onChange={(event) => onFieldChange('medicationText', event.target.value)} placeholder="List medications"/>
+    </Field>}
+    <Field label="Current symptoms">
+      <select value={profile.symptomsNow} onChange={(event) => onFieldChange('symptomsNow', event.target.value)}>
+        <option value="">Not provided</option><option>Yes</option><option>No</option>
+      </select>
+    </Field>
+    {(profile.symptomsNow === 'Yes' || profile.symptomsText) && <Field label="Symptom details">
+      <textarea rows={2} value={profile.symptomsText} onChange={(event) => onFieldChange('symptomsText', event.target.value)} placeholder="Describe current symptoms"/>
+    </Field>}
+    <Field label="Recurring symptoms or concerns">
+      <select value={profile.recurring} onChange={(event) => onFieldChange('recurring', event.target.value)}>
+        <option value="">Not provided</option><option>Yes</option><option>No</option>
+      </select>
+    </Field>
+    {(profile.recurring === 'Yes' || profile.recurringText) && <Field label="Recurring symptom details">
+      <textarea rows={2} value={profile.recurringText} onChange={(event) => onFieldChange('recurringText', event.target.value)} placeholder="Describe recurring concerns"/>
+    </Field>}
   </div>
 }
 
