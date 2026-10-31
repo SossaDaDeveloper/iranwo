@@ -1,0 +1,27 @@
+/* Styles for the clinic request form when opened inside the chat conversation. */
+.chat-clinic-request-wrap {
+  width: min(100%, 680px);
+  margin: 16px auto 20px;
+  padding: 14px;
+  border: 1px solid #dce6dc;
+  border-radius: 16px;
+  background: #f8fbf7;
+}
+.chat-clinic-request-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: #294334;
+}
+.chat-clinic-request-wrap > p {
+  margin: 8px 0 14px;
+  color: #68776d;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.chat-clinic-request-heading .text-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}

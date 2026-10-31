@@ -9,6 +9,7 @@ export type StepProps = {
   goTo: (step: number) => void;
   editing: boolean;
   reset: () => void;
+  onEmergency?: () => void;
 };
 
 const URGENT = /chest pain|can't breathe|cannot breathe|difficulty breathing|short(ness)? of breath|seizure|unconscious|passed out|collapse|severe bleeding|heavy bleeding|stroke|slurred speech|poison|choking|breathe no dey|dey faint/i;

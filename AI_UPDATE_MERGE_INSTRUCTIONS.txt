@@ -1,0 +1,21 @@
+IRANWO AI UPDATE — OVERLAY PACKAGE
+
+This archive contains only files changed or added by the Gemma 4 / local AI integration.
+It intentionally excludes:
+- node_modules/
+- .git/
+- package.json
+- package-lock.json
+- .env.local and all API secrets
+
+HOW TO APPLY
+1. Make sure you are in your existing Iranwo Git repository folder.
+2. Check `git status` and preserve any work you have not committed.
+3. Create a feature branch before applying the update (instructions were provided in chat).
+4. Extract this ZIP directly into the ROOT of your existing Iranwo project folder.
+5. Allow overwrite of matching source files. This applies the AI integration to your existing folder; it does not create a new project or replace dependencies.
+6. Keep your existing node_modules folder. Do not run npm install for this update because dependency manifests are unchanged.
+7. Create or update .env.local locally with NOVITA_API_KEY and NOVITA_MODEL; never commit .env.local.
+
+IMPORTANT
+This overlay was generated against the project snapshot you uploaded. If you have edited the same files since uploading that snapshot, review/merge those edits before overwriting them. In particular, src/App.tsx, src/config.ts, vite.config.ts, features/safety/safetyEngine.ts, src/App.css and sw.js are updated files.

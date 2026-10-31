@@ -40,7 +40,7 @@ export default function WelcomeStep({ next, onEmergency }: StepProps) {
             </span>
             <button
               type="button"
-              onClick={() => onEmergency()}
+              onClick={() => onEmergency?.()}
               aria-label="Open emergency help"
               title="Emergency help"
               className="group relative grid h-[58px] w-[58px] shrink-0 place-items-center rounded-full border-[4px] border-white bg-[#c92d37] text-white shadow-[0_8px_24px_rgba(201,45,55,.22)] transition duration-200 hover:scale-[1.04] hover:bg-[#b9232e] active:scale-95 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[#c92d37]/20"

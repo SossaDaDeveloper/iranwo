@@ -6,9 +6,15 @@ import {
   Sparkles, Stethoscope, UserRound, Users, Wifi, X, Zap,
 } from 'lucide-react'
 import WelcomeLanding from './components/onboarding/WelcomeLanding'
+import { runAssistantTurn } from './features/ai/assistantOrchestrator'
+import type { AgentAssessments } from './features/ai/agent.types'
+import { isCloudAIConfigured } from './features/ai/aiGateway'
+import type { SafetyAssessment } from '../features/safety/safetyEngine'
+import { confirmCurrentEmergency, dismissClarification } from '../features/safety/safetyEngine'
+import SafetyAlert from './features/safety/SafetyAlert'
 
 type Language = 'en' | 'yo' | 'pcm' | 'ha' | 'ig'
-type Sex = 'Female' | 'Male' | 'Intersex' | 'Prefer not to say'
+type Sex = 'Female' | 'Male' | 'Prefer not to say'
 type Condition = 'sickle' | 'asthma' | 'diabetes' | 'seizures' | 'hypertension' | 'heart' | 'other'
 type Contact = { name: string; relationship: string; country: string; phone: string }
 type Profile = { name: string; age: string; sex: Sex | ''; language: Language; country: string; phone: string; conditions: Condition[]; customConditions: string[]; notes: string; contacts: Contact[] }
@@ -130,6 +136,11 @@ function App() {
   const [chatText, setChatText] = useState('')
   const [messages, setMessages] = useState(initialMessages)
   const [busy, setBusy] = useState(false)
+  const [safetyAssessment, setSafetyAssessment] = useState<SafetyAssessment | null>(null)
+  const [aiProcessingConsent, setAiProcessingConsent] = useState(false)
+  const [aiProfileContextConsent, setAiProfileContextConsent] = useState(false)
+  const [lastAgentAssessments, setLastAgentAssessments] = useState<AgentAssessments | null>(null)
+  const [aiSuggestedEscalation, setAiSuggestedEscalation] = useState(false)
   const [toast, setToast] = useState('')
   const [emergencyContactIndex, setEmergencyContactIndex] = useState('0')
   const [showContactForm, setShowContactForm] = useState(false)
@@ -230,23 +241,75 @@ function App() {
   const sendMessage = async () => {
     const text = chatText.trim()
     if (!text || busy) return
-    setMessages(m => [...m, { role: 'user', text }])
+
+    // Do not block here: the local safety screen must run even when cloud-AI
+    // consent is absent or the selected language is not yet supported.
+
+    const history = messages.slice(-8).map(message => ({
+      role: message.role as 'user' | 'assistant',
+      text: message.text,
+    }))
+    setMessages(current => [...current, { role: 'user', text }])
     setChatText('')
+    setSafetyAssessment(null)
+    setAiSuggestedEscalation(false)
+    setLastAgentAssessments(null)
     setBusy(true)
-    await new Promise(resolve => setTimeout(resolve, 650))
-    const low = text.toLowerCase()
-    let reply = ''
-    if (/can't breathe|cannot breathe|difficulty breathing|seizure|unconscious|chest pain|overdose|not waking|not responding/.test(low)) {
-      reply = 'This may be an emergency. Please contact your local emergency service now. If someone is unconscious, having a seizure, or struggling to breathe, do not wait for a chatbot response. I can help you open the emergency options.'
-    } else if (/headache|fever|cough|pain|symptom|sick/.test(low)) {
-      reply = 'I’m sorry you’re dealing with that. I can share general information, but I can’t diagnose you. How long has this been happening, and are there any severe or worsening symptoms? If you feel seriously unwell, seek medical care.'
-    } else if (/hello|hi\b|hey/.test(low)) {
-      reply = 'Hey there 👋 I’m glad you reached out. What health question can I help you explore today?'
-    } else {
-      reply = 'That’s a fair question. I can help with general health information and possible next steps, but I can’t confirm a diagnosis. Tell me a little more about what you’re experiencing, and consider a qualified health professional for personal medical advice.'
+
+    try {
+      const result = await runAssistantTurn({
+        message: text,
+        history,
+        language: profile.language,
+        consentAccepted: aiProcessingConsent,
+        profileContext: aiProfileContextConsent ? {
+          age: profile.age && Number.isFinite(Number(profile.age)) ? Number(profile.age) : null,
+          sex: profile.sex || null,
+          conditions: [
+            ...profile.conditions.filter(condition => condition !== 'other').map(condition => conditionData.find(item => item.id === condition)?.title ?? condition),
+            ...profile.customConditions,
+          ].filter(Boolean),
+          notes: profile.notes.trim() || null,
+        } : undefined,
+      })
+
+      if (result.kind === 'safety') {
+        setSafetyAssessment(result.assessment)
+      } else if (result.kind === 'ai') {
+        const { response } = result
+        setLastAgentAssessments(response.agents)
+        const shouldOfferHelp = response.agents.riskAssessment.level === 'emergency'
+          || response.agents.riskAssessment.level === 'urgent'
+          || response.agents.responseEscalation.humanSupportRecommended
+        setAiSuggestedEscalation(shouldOfferHelp)
+        setMessages(current => [...current, { role: 'assistant', text: response.assistantMessage }])
+      } else if (result.kind === 'demo') {
+        setMessages(current => [...current, { role: 'assistant', text: result.text }])
+      } else if (result.kind === 'consent_required') {
+        setMessages(current => [...current, { role: 'assistant', text: 'Please review the AI data-processing notice below before using the connected AI service. Your message was screened locally and was not sent to the model.' }])
+      } else if (result.kind === 'unsupported_language') {
+        setMessages(current => [...current, { role: 'assistant', text: 'The local safety screen ran, but the connected Gemma test currently supports English only. Switch the chat language to English to test model responses. Your message was not sent to the model.' }])
+      } else {
+        setMessages(current => [...current, { role: 'assistant', text: `${result.message} Your message has not received an AI assessment. For urgent symptoms, open Emergency Help.` }])
+      }
+    } catch {
+      setMessages(current => [...current, { role: 'assistant', text: 'Iranwo could not process that message. Please try again, or use Emergency Help if someone may be in immediate danger.' }])
+    } finally {
+      setBusy(false)
     }
-    setMessages(m => [...m, { role: 'assistant', text: reply }])
-    setBusy(false)
+  }
+
+  const confirmSafetyIsCurrent = () => {
+    if (!safetyAssessment) return
+    const confirmed = confirmCurrentEmergency(safetyAssessment)
+    setSafetyAssessment(confirmed)
+  }
+
+  const dismissSafetyClarification = () => {
+    if (!safetyAssessment) return
+    const dismissed = dismissClarification(safetyAssessment)
+    setSafetyAssessment(null)
+    setMessages(current => [...current, { role: 'assistant', text: dismissed.userMessage }])
   }
 
   const openEmergency = () => go('emergency')
@@ -360,8 +423,15 @@ function App() {
 
       {screen === 'chat' && <section className="chat-screen">
         <div className="page-title-row"><button className="icon-button" onClick={() => go('home','back')}><ArrowLeft size={19}/></button><div className="chat-avatar"><Stethoscope size={20}/></div><div className="title-grow"><h1>{t.chatTitle}</h1><p><span className="status-dot"/> {t.chatHelp}</p></div></div>
-        <div className="chat-safety"><ShieldCheck size={16}/><span>{t.chatDisclaimer}</span></div>
+        <div className="chat-safety"><ShieldCheck size={16}/><span>{t.chatDisclaimer} Warning-sign detection is currently a limited prototype; no alert does not mean someone is safe.</span></div>
+        {!isCloudAIConfigured() && <p className="ai-cloud-status">DEMO MODE · The AI connection is not configured. No chat messages are sent to an AI provider.</p>}
+        {isCloudAIConfigured() && import.meta.env.DEV && <p className="ai-cloud-status">DEVELOPMENT AI · Gemma 4 through Novita · use fictional test cases only.</p>}
         <div className="message-list">{messages.map((m,i) => <div key={i} className={`message-row ${m.role === 'user' ? 'user-row' : ''}`}><div className={`message-bubble ${m.role === 'user' ? 'user-bubble' : 'assistant-bubble'}`}>{m.text}</div></div>)}{busy && <div className="message-row"><div className="message-bubble assistant-bubble typing"><i/><i/><i/></div></div>}</div>
+        {safetyAssessment && <SafetyAlert assessment={safetyAssessment} onConfirmCurrent={confirmSafetyIsCurrent} onNotCurrent={dismissSafetyClarification} onOpenEmergency={openEmergency}/>}
+        {aiSuggestedEscalation && <div className="chat-safety-alert is-urgent" role="status"><strong>Consider getting help from a healthcare professional.</strong><p>The AI response identified a possible need for human support. This is not a diagnosis or a confirmed emergency assessment.</p><button type="button" className="chat-safety-alert-primary" onClick={openEmergency}>Open emergency help options</button></div>}
+        {import.meta.env.DEV && lastAgentAssessments && <details className="ai-agent-debug"><summary>Inspect six AI roles · development only</summary><pre>{JSON.stringify(lastAgentAssessments, null, 2)}</pre></details>}
+        {isCloudAIConfigured() && <div className="ai-consent-group"><label className="ai-cloud-consent"><input type="checkbox" checked={aiProcessingConsent} onChange={event => {setAiProcessingConsent(event.target.checked); if (!event.target.checked) setAiProfileContextConsent(false)}}/><span><strong>Allow AI processing of this conversation.</strong> Your message and up to eight recent chat turns will be sent to Novita AI, which hosts Gemma 4, through this local development server.</span></label><label className="ai-cloud-consent ai-profile-consent"><input type="checkbox" checked={aiProfileContextConsent} disabled={!aiProcessingConsent} onChange={event => setAiProfileContextConsent(event.target.checked)}/><span><strong>Also include my health profile (optional).</strong> This sends your age, sex, saved health conditions and health notes. Your name, phone number and trusted contacts are excluded.</span></label><p className="ai-cloud-status ai-test-warning">Prototype testing only: use fictional names and health scenarios. Do not submit real patient information or another person's personal data. The provider's healthcare-use permission has not yet been confirmed. AI output can be wrong and is not a diagnosis.</p></div>}
+        {isCloudAIConfigured() && profile.language !== 'en' && <p className="ai-cloud-status">Cloud AI is temporarily disabled for this selected language until its data-processing notice has been translated and reviewed.</p>}
         <div className="chat-quick-prompts"><button onClick={() => setChatText('I have a headache. What should I know?')}>Headache</button><button onClick={() => setChatText('How can I sleep better?')}>Sleep</button><button onClick={() => setChatText('What are common asthma warning signs?')}>Asthma</button></div>
         <form className="chat-composer" onSubmit={e => {e.preventDefault(); void sendMessage()}}><input value={chatText} onChange={e => setChatText(e.target.value)} placeholder={t.chatPlaceholder}/><button type="submit" className="send-button" disabled={!chatText.trim() || busy} aria-label={t.send}><Send size={18}/></button></form>
       </section>}
