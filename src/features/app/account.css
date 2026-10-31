@@ -1,0 +1,40 @@
+.account-form {
+  display: grid;
+  gap: 16px;
+  margin: 22px 0 14px;
+}
+
+.account-form .button {
+  justify-self: start;
+}
+
+.account-status {
+  margin: 20px 0;
+}
+
+.account-local-note {
+  display: block;
+  max-width: 62ch;
+  margin-top: 20px;
+  line-height: 1.6;
+}
+
+.account-entry-actions {
+  display: grid;
+  justify-items: start;
+  gap: 12px;
+  margin-top: 18px;
+}
+
+.account-entry-actions .text-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.account-clinic-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 12px;
+}

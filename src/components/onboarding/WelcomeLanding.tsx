@@ -2,6 +2,7 @@ import {
   ArrowRight,
   AudioLines,
   HeartPulse,
+  Hospital,
   Languages,
   ShieldCheck,
   Siren,
@@ -17,6 +18,7 @@ type WelcomeLandingProps = {
   onGetStarted: () => void
   onContinue: () => void
   onEmergency: () => void
+  onClinicDashboard: () => void
 }
 
 export default function WelcomeLanding({
@@ -26,6 +28,7 @@ export default function WelcomeLanding({
   onGetStarted,
   onContinue,
   onEmergency,
+  onClinicDashboard,
 }: WelcomeLandingProps) {
   return (
     <section className="iw-welcome" aria-labelledby="iw-welcome-title">
@@ -47,6 +50,9 @@ export default function WelcomeLanding({
               Continue to Iranwo <ArrowRight size={15} />
             </button>
           )}
+          <button className="iw-clinic-link" onClick={onClinicDashboard}>
+            <Hospital size={15}/> Clinic Portal
+          </button>
         </header>
 
         <main className="iw-welcome-hero">

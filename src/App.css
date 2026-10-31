@@ -316,6 +316,9 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .profile-screen { width: min(100%, 760px); }
 .profile-screen .page-title-row { margin-bottom: 12px; }
 .profile-conditions, .profile-contacts { margin-top: 24px; }
+.health-detail-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin: 20px 0; }
+.health-detail-grid .field { min-width: 0; }
+.profile-health-heading { display: flex; align-items: center; gap: 9px; margin: 0 0 7px; color: var(--iw-forest); font-size: 19px; }
 .condition-card.compact { min-height: 75px; grid-template-columns: 48px 1fr; padding: 10px; }
 .condition-card.compact .condition-art { width: 46px; height: 47px; }
 .condition-card.compact .condition-art svg { width: 42px; height: 40px; }
@@ -353,6 +356,15 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .emergency-safety-note { display: flex; align-items: flex-start; gap: 10px; margin-top: 17px; padding: 13px; border-radius: 13px; background: #fff7e9; color: #8a7044; }
 .emergency-safety-note svg { flex: 0 0 auto; }
 .emergency-safety-note p { margin: 0; font-size: 10px; line-height: 1.6; }
+.emergency-clinic-share { width: min(100%, 610px); margin: 20px auto 0; padding: 18px; border: 1px solid #e8cfca; border-radius: 16px; background: #fffdfb; }
+.emergency-clinic-share h2 { display: flex; align-items: center; gap: 8px; margin: 0; color: #473a36; font-size: 15px; }
+.emergency-clinic-share > p { margin: 8px 0 13px; color: #786964; font-size: 10px; line-height: 1.6; }
+.emergency-clinic-share label { display: block; margin-bottom: 6px; color: #5e514d; font-size: 10px; font-weight: 750; }
+.emergency-clinic-share .emergency-location-consent { display: flex; align-items: flex-start; gap: 8px; margin: 11px 0 2px; color: #675a56; font-weight: 600; line-height: 1.5; }
+.emergency-location-consent input { flex: 0 0 auto; margin-top: 1px; accent-color: var(--iw-green); }
+.emergency-clinic-share textarea { width: 100%; resize: vertical; padding: 10px; border: 1px solid #e7deda; border-radius: 10px; background: #fff; font-size: 11px; }
+.emergency-clinic-share .button { margin-top: 10px; }
+.emergency-clinic-share > small { display: block; margin-top: 9px; color: #896f68; font-size: 9px; line-height: 1.5; }
 .emergency-close { display: block; margin: 17px auto 0; border: 0; background: transparent; color: var(--iw-muted); font-size: 11px; font-weight: 700; cursor: pointer; }
 
 /* Navigation and feedback */
@@ -398,7 +410,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   .welcome-foot { margin-top: 19px; }
   .onboarding-card { padding: 22px 18px; border-radius: 23px; }
   .step-top { margin-bottom: 26px; }
-  .form-grid, .condition-grid, .language-grid { grid-template-columns: 1fr; }
+  .form-grid, .condition-grid, .language-grid, .health-detail-grid { grid-template-columns: 1fr; }
   .condition-card { min-height: 92px; }
   .card-bottom { align-items: stretch; flex-direction: column; }
   .card-bottom .button { width: 100%; }

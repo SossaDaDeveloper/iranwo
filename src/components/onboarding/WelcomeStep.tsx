@@ -9,7 +9,11 @@ import {
 } from 'lucide-react'
 import { Logo, type StepProps } from './ui'
 
-export default function WelcomeStep({ next, onEmergency }: StepProps) {
+type WelcomeStepProps = Pick<StepProps, 'next'> & {
+  onEmergency: () => void
+}
+
+export default function WelcomeStep({ next, onEmergency }: WelcomeStepProps) {
   return (
     <main className="relative min-h-[100dvh] overflow-hidden bg-[#f8f8f3] text-[#182e27]">
       {/* Soft background light */}

@@ -132,6 +132,21 @@
 
 .iw-continue-link:hover { transform: translateX(2px); background: rgba(255,255,255,.7); }
 
+.iw-clinic-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  border: 1px solid #dfe8de;
+  border-radius: 999px;
+  background: rgba(255,255,255,.7);
+  color: #426b56;
+  padding: 9px 12px;
+  font-size: 11px !important;
+  font-weight: 750;
+}
+
+.iw-clinic-link:hover { background: #fff; }
+
 .iw-welcome-hero {
   display: grid;
   flex: 1;
@@ -224,7 +239,8 @@
 
 .iw-primary-action:focus-visible,
 .iw-sos-button:focus-visible,
-.iw-continue-link:focus-visible {
+.iw-continue-link:focus-visible,
+.iw-clinic-link:focus-visible {
   outline: 3px solid rgba(47,123,86,.42);
   outline-offset: 4px;
 }
@@ -470,6 +486,7 @@
   .iw-brand-name { font-size: 24px; }
   .iw-header-note { display: none; }
   .iw-continue-link { padding: 8px 9px; font-size: 11px !important; }
+  .iw-clinic-link { gap: 5px; padding: 8px 9px; font-size: 10px !important; }
   .iw-welcome-hero { gap: 3px; padding: 25px 0 32px; }
   .iw-welcome-art { width: min(82vw, 340px); }
   .iw-floating-card { gap: 7px; max-width: 168px; padding: 9px 10px; border-radius: 13px; }
