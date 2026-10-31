@@ -17,6 +17,7 @@ type WelcomeLandingProps = {
   onGetStarted: () => void
   onContinue: () => void
   onEmergency: () => void
+  onClinicDashboard: () => void;
 }
 
 export default function WelcomeLanding({
@@ -26,6 +27,7 @@ export default function WelcomeLanding({
   onGetStarted,
   onContinue,
   onEmergency,
+  onClinicDashboard,
 }: WelcomeLandingProps) {
   return (
     <section className="iw-welcome" aria-labelledby="iw-welcome-title">
